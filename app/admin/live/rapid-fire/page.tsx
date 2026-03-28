@@ -1,10 +1,9 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import React from "react";
 import {
   Play, Pause, RotateCcw, CheckCircle, XCircle, SkipForward,
   ChevronRight, Trophy, Plus, Trash2, Users, ArrowRight, Medal,
-  Search, Filter, X, AlertTriangle, Loader2, BookOpen,
+  Loader2, BookOpen, Layers, AlertTriangle,
 } from "lucide-react";
 import clsx from "clsx";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
@@ -17,7 +16,13 @@ type Question = {
   subject: string;
   category: string;
   difficulty?: string;
-  round_type?: string;
+};
+
+type Pool = {
+  id: string;
+  pool_number: number;
+  name: string;
+  questions: Question[];
 };
 
 type AttemptResult = "correct" | "wrong" | "pass" | "timeout";
@@ -30,6 +35,8 @@ type Attempt = {
 
 type TeamResult = {
   teamName: string;
+  poolNumber: number;
+  poolName: string;
   score: number;
   correct: number;
   wrong: number;
@@ -40,7 +47,7 @@ type TeamResult = {
 
 type GameState =
   | "session-setup"
-  | "question-select"
+  | "pool-select"
   | "round-setup"
   | "playing"
   | "paused"
@@ -49,24 +56,36 @@ type GameState =
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ROUND_TIME = 60;
-const REQUIRED_QUESTIONS = 10;
 
-const FALLBACK_QUESTIONS: Question[] = [
-  { id: "f1",  question_text: "What is the chemical symbol for Gold?",          answer_key: "Au",                     subject: "Chemistry",   category: "science",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f2",  question_text: "What is the capital of Ghana?",                   answer_key: "Accra",                  subject: "Geography",   category: "general",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f3",  question_text: "Who wrote 'Things Fall Apart'?",                  answer_key: "Chinua Achebe",          subject: "Literature",  category: "arts",       difficulty: "medium", round_type: "rapid_fire" },
-  { id: "f4",  question_text: "What is the powerhouse of the cell?",             answer_key: "Mitochondria",           subject: "Biology",     category: "science",    difficulty: "medium", round_type: "rapid_fire" },
-  { id: "f5",  question_text: "What does GDP stand for?",                        answer_key: "Gross Domestic Product", subject: "Economics",   category: "commercial", difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f6",  question_text: "What is the square root of 144?",                 answer_key: "12",                     subject: "Mathematics", category: "science",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f7",  question_text: "Name the longest river in Africa.",               answer_key: "Nile",                   subject: "Geography",   category: "general",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f8",  question_text: "What element has the symbol 'Fe'?",               answer_key: "Iron",                   subject: "Chemistry",   category: "science",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f9",  question_text: "In what year did Nigeria gain independence?",     answer_key: "1960",                   subject: "History",     category: "general",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f10", question_text: "What is the approximate speed of light?",         answer_key: "300,000 km/s",           subject: "Physics",     category: "science",    difficulty: "medium", round_type: "rapid_fire" },
-  { id: "f11", question_text: "What gas do plants absorb during photosynthesis?",answer_key: "Carbon Dioxide (CO₂)",  subject: "Biology",     category: "science",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f12", question_text: "Who was the first President of Nigeria?",         answer_key: "Nnamdi Azikiwe",         subject: "History",     category: "general",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f13", question_text: "What is the chemical formula for water?",         answer_key: "H₂O",                   subject: "Chemistry",   category: "science",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f14", question_text: "How many sides does a hexagon have?",             answer_key: "6",                      subject: "Mathematics", category: "science",    difficulty: "easy",   round_type: "rapid_fire" },
-  { id: "f15", question_text: "What is the hardest natural substance on Earth?", answer_key: "Diamond",                subject: "Science",     category: "science",    difficulty: "medium", round_type: "rapid_fire" },
+const DEMO_QUESTIONS: Question[] = [
+  { id: "f1",  question_text: "What is the chemical symbol for Gold?",           answer_key: "Au",                     subject: "Chemistry",   category: "science",    difficulty: "easy"   },
+  { id: "f2",  question_text: "What is the capital of Ghana?",                    answer_key: "Accra",                  subject: "Geography",   category: "general",    difficulty: "easy"   },
+  { id: "f3",  question_text: "Who wrote 'Things Fall Apart'?",                   answer_key: "Chinua Achebe",          subject: "Literature",  category: "arts",       difficulty: "medium" },
+  { id: "f4",  question_text: "What is the powerhouse of the cell?",              answer_key: "Mitochondria",           subject: "Biology",     category: "science",    difficulty: "medium" },
+  { id: "f5",  question_text: "What does GDP stand for?",                         answer_key: "Gross Domestic Product", subject: "Economics",   category: "commercial", difficulty: "easy"   },
+  { id: "f6",  question_text: "What is the square root of 144?",                  answer_key: "12",                     subject: "Mathematics", category: "science",    difficulty: "easy"   },
+  { id: "f7",  question_text: "Name the longest river in Africa.",                answer_key: "Nile",                   subject: "Geography",   category: "general",    difficulty: "easy"   },
+  { id: "f8",  question_text: "What element has the symbol 'Fe'?",                answer_key: "Iron",                   subject: "Chemistry",   category: "science",    difficulty: "easy"   },
+  { id: "f9",  question_text: "In what year did Nigeria gain independence?",      answer_key: "1960",                   subject: "History",     category: "general",    difficulty: "easy"   },
+  { id: "f10", question_text: "What is the approximate speed of light?",          answer_key: "300,000 km/s",           subject: "Physics",     category: "science",    difficulty: "medium" },
+  { id: "f11", question_text: "What gas do plants absorb during photosynthesis?", answer_key: "Carbon Dioxide (CO₂)",  subject: "Biology",     category: "science",    difficulty: "easy"   },
+  { id: "f12", question_text: "Who was the first President of Nigeria?",          answer_key: "Nnamdi Azikiwe",         subject: "History",     category: "general",    difficulty: "easy"   },
+  { id: "f13", question_text: "What is the chemical formula for water?",          answer_key: "H₂O",                   subject: "Chemistry",   category: "science",    difficulty: "easy"   },
+  { id: "f14", question_text: "How many sides does a hexagon have?",              answer_key: "6",                      subject: "Mathematics", category: "science",    difficulty: "easy"   },
+  { id: "f15", question_text: "What is the hardest natural substance on Earth?",  answer_key: "Diamond",                subject: "Science",     category: "science",    difficulty: "medium" },
+  { id: "f16", question_text: "What planet is known as the Red Planet?",          answer_key: "Mars",                   subject: "Physics",     category: "science",    difficulty: "easy"   },
+  { id: "f17", question_text: "What is the capital of Nigeria?",                  answer_key: "Abuja",                  subject: "Geography",   category: "general",    difficulty: "easy"   },
+  { id: "f18", question_text: "Who invented the telephone?",                      answer_key: "Alexander Graham Bell",  subject: "History",     category: "general",    difficulty: "easy"   },
+  { id: "f19", question_text: "What is 15% of 200?",                              answer_key: "30",                     subject: "Mathematics", category: "commercial", difficulty: "easy"   },
+  { id: "f20", question_text: "What is the boiling point of water in Celsius?",   answer_key: "100°C",                  subject: "Chemistry",   category: "science",    difficulty: "easy"   },
+];
+
+const DEMO_POOLS: Pool[] = [
+  { id: "dp1", pool_number: 1,  name: "Science Basics",      questions: DEMO_QUESTIONS.slice(0, 10)  },
+  { id: "dp2", pool_number: 2,  name: "History & Geography", questions: [DEMO_QUESTIONS[1], DEMO_QUESTIONS[6], DEMO_QUESTIONS[8], DEMO_QUESTIONS[11], DEMO_QUESTIONS[16], DEMO_QUESTIONS[17], DEMO_QUESTIONS[2], DEMO_QUESTIONS[4], DEMO_QUESTIONS[14], DEMO_QUESTIONS[18]] },
+  { id: "dp3", pool_number: 3,  name: "Mixed Challenge",     questions: [DEMO_QUESTIONS[0], DEMO_QUESTIONS[2], DEMO_QUESTIONS[4], DEMO_QUESTIONS[6], DEMO_QUESTIONS[8], DEMO_QUESTIONS[10], DEMO_QUESTIONS[12], DEMO_QUESTIONS[14], DEMO_QUESTIONS[16], DEMO_QUESTIONS[18]] },
+  { id: "dp4", pool_number: 4,  name: "Numbers & Science",   questions: DEMO_QUESTIONS.slice(5, 15)  },
+  { id: "dp5", pool_number: 5,  name: "General Knowledge",   questions: DEMO_QUESTIONS.slice(10, 20) },
 ];
 
 const RESULT_COLORS: Record<AttemptResult, string> = {
@@ -74,12 +93,6 @@ const RESULT_COLORS: Record<AttemptResult, string> = {
   wrong:   "bg-red-500",
   pass:    "bg-yellow-500",
   timeout: "bg-slate-500",
-};
-
-const DIFF_COLORS: Record<string, string> = {
-  easy:   "bg-green-500/20 text-green-400",
-  medium: "bg-yellow-500/20 text-yellow-400",
-  hard:   "bg-red-500/20 text-red-400",
 };
 
 function shuffle<T>(arr: T[]): T[] {
@@ -96,12 +109,17 @@ function ScoreCard({ result, rank }: { result: TeamResult; rank: number }) {
           <span className="text-2xl">{medal}</span>
           <div>
             <div className="font-black text-white">{result.teamName}</div>
-            <div className="text-white/40 text-xs">{result.timeUsed}s of 60s used</div>
+            <div className="text-white/40 text-xs flex items-center gap-1.5">
+              <span className="bg-[#f5a623]/20 text-[#f5a623] px-1.5 py-0.5 rounded-full text-xs font-bold">
+                Pool {String(result.poolNumber).padStart(2, "0")}
+              </span>
+              {result.poolName}
+            </div>
           </div>
         </div>
         <div className="text-right">
           <div className={clsx("text-3xl font-black", rank === 1 ? "text-[#f5a623]" : "text-white")}>{result.score}</div>
-          <div className="text-white/40 text-xs">points</div>
+          <div className="text-white/40 text-xs">{result.timeUsed}s used</div>
         </div>
       </div>
       <div className="flex gap-3">
@@ -121,16 +139,14 @@ export default function RapidFirePage() {
   const [sessionResults, setSessionResults] = useState<TeamResult[]>([]);
   const [currentTeamIdx, setCurrentTeamIdx] = useState(0);
 
-  // Question bank + selection
-  const [allQuestions, setAllQuestions] = useState<Question[]>([]);
-  const [loadingQ, setLoadingQ] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [roundQuestions, setRoundQuestions] = useState<Question[]>([]);  // the 10 chosen
-  const [qSearch, setQSearch] = useState("");
-  const [qFilterCat, setQFilterCat] = useState("");
-  const [qFilterDiff, setQFilterDiff] = useState("");
+  // Pool state
+  const [pools, setPools] = useState<Pool[]>([]);
+  const [loadingPools, setLoadingPools] = useState(false);
+  const [poolsError, setPoolsError] = useState("");
+  const [currentPoolPick, setCurrentPoolPick] = useState<Pool | null>(null);
 
   // Round state
+  const [roundQuestions, setRoundQuestions] = useState<Question[]>([]);
   const [gameState, setGameState] = useState<GameState>("session-setup");
   const [primaryQueue, setPrimaryQueue] = useState<Question[]>([]);
   const [recycleQueue, setRecycleQueue] = useState<Question[]>([]);
@@ -148,53 +164,50 @@ export default function RapidFirePage() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
 
-  // ── Fetch question bank ────────────────────────────────────────────────────
-  const fetchQuestions = useCallback(async () => {
-    setLoadingQ(true);
+  // ── Fetch pools ────────────────────────────────────────────────────────
+  const fetchPools = useCallback(async () => {
+    setLoadingPools(true);
+    setPoolsError("");
     if (!isSupabaseConfigured) {
-      setAllQuestions(FALLBACK_QUESTIONS);
-      setLoadingQ(false);
+      setPools(DEMO_POOLS);
+      setLoadingPools(false);
       return;
     }
-    const { data, error } = await supabase
-      .from("sc_questions")
-      .select("id, question_text, answer_key, subject, category, difficulty, round_type")
-      .order("subject");
-    if (error || !data?.length) {
-      setAllQuestions(FALLBACK_QUESTIONS);
-    } else {
-      setAllQuestions(data);
+    try {
+      const { data, error } = await supabase
+        .from("sc_question_pools")
+        .select(`
+          id, pool_number, name,
+          sc_pool_questions (
+            order_index,
+            sc_questions ( id, question_text, answer_key, subject, category, difficulty )
+          )
+        `)
+        .order("pool_number") as { data: any[] | null; error: any };
+
+      if (error) throw error;
+      const mapped: Pool[] = (data ?? []).map((p: any) => ({
+        id: p.id,
+        pool_number: p.pool_number,
+        name: p.name,
+        questions: (p.sc_pool_questions ?? [])
+          .sort((a: any, b: any) => a.order_index - b.order_index)
+          .map((pq: any) => pq.sc_questions)
+          .filter(Boolean),
+      }));
+      if (mapped.length === 0) {
+        setPools(DEMO_POOLS);
+      } else {
+        setPools(mapped);
+      }
+    } catch (e: any) {
+      setPoolsError(e.message ?? "Failed to load pools");
+      setPools(DEMO_POOLS);
     }
-    setLoadingQ(false);
+    setLoadingPools(false);
   }, []);
 
-  // ── Toggle question selection ──────────────────────────────────────────────
-  const toggleQuestion = (q: Question) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(q.id)) {
-        next.delete(q.id);
-      } else if (next.size < REQUIRED_QUESTIONS) {
-        next.add(q.id);
-      }
-      return next;
-    });
-  };
-
-  const selectedCount = selectedIds.size;
-  const canStart = selectedCount === REQUIRED_QUESTIONS;
-
-  // Filtered list for the picker
-  const filteredQ = allQuestions.filter((q) => {
-    const term = qSearch.toLowerCase();
-    return (
-      (!term || q.question_text.toLowerCase().includes(term) || q.subject.toLowerCase().includes(term)) &&
-      (!qFilterCat  || q.category  === qFilterCat)  &&
-      (!qFilterDiff || q.difficulty === qFilterDiff)
-    );
-  });
-
-  // ── Round logic ────────────────────────────────────────────────────────────
+  // ── Round logic ────────────────────────────────────────────────────────
   const loadNextQuestion = useCallback((primary: Question[], recycle: Question[]) => {
     setShowAnswer(false);
     setLastResult(null);
@@ -243,7 +256,7 @@ export default function RapidFirePage() {
   }, [gameState, showAnswer, handleResult, stopTimer]);
 
   const startRound = () => {
-    const pool = [...roundQuestions]; // already chosen 10, keep order
+    const pool = [...roundQuestions];
     setScore(0);
     setQuestionNum(0);
     setAttempts([]);
@@ -258,27 +271,39 @@ export default function RapidFirePage() {
   };
 
   const finishRound = useCallback(() => {
+    if (!currentPoolPick) return;
     const timeUsed = Math.min(Math.round((Date.now() - roundStartTime) / 1000), ROUND_TIME);
     setSessionResults((prev) => [...prev, {
       teamName: teams[currentTeamIdx],
-      score, correct: attempts.filter((a) => a.result === "correct").length,
+      poolNumber: currentPoolPick.pool_number,
+      poolName: currentPoolPick.name,
+      score,
+      correct: attempts.filter((a) => a.result === "correct").length,
       wrong: attempts.filter((a) => a.result === "wrong").length,
       passed: attempts.filter((a) => a.result === "pass" || a.result === "timeout").length,
-      attempts, timeUsed,
+      attempts,
+      timeUsed,
     }]);
-  }, [teams, currentTeamIdx, score, attempts, roundStartTime]);
+  }, [teams, currentTeamIdx, score, attempts, roundStartTime, currentPoolPick]);
 
-  useEffect(() => { if (gameState === "round-done") { stopTimer(); finishRound(); } }, [gameState, stopTimer, finishRound]);
+  useEffect(() => {
+    if (gameState === "round-done") { stopTimer(); finishRound(); }
+  }, [gameState, stopTimer, finishRound]);
 
   const nextTeam = () => {
     const nextIdx = currentTeamIdx + 1;
-    if (nextIdx >= teams.length) { setGameState("session-done"); }
-    else { setCurrentTeamIdx(nextIdx); setGameState("round-setup"); }
+    if (nextIdx >= teams.length) {
+      setGameState("session-done");
+    } else {
+      setCurrentTeamIdx(nextIdx);
+      setCurrentPoolPick(null);
+      setGameState("pool-select");
+    }
   };
 
   const resetSession = () => {
     setSessionResults([]); setCurrentTeamIdx(0);
-    setSelectedIds(new Set()); setRoundQuestions([]);
+    setCurrentPoolPick(null); setRoundQuestions([]);
     setGameState("session-setup");
   };
 
@@ -291,7 +316,7 @@ export default function RapidFirePage() {
         <div className="max-w-lg w-full space-y-6">
           <div className="text-center">
             <h1 className="text-3xl font-black mb-1">Rapid Fire — Session Setup</h1>
-            <p className="text-white/50">Step 1 of 2 · Add all competing teams</p>
+            <p className="text-white/50">Add competing teams. Each team will pick their own question pool.</p>
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-3">
@@ -331,12 +356,17 @@ export default function RapidFirePage() {
             ))}
           </div>
 
+          <div className="bg-[#f5a623]/5 border border-[#f5a623]/20 rounded-xl px-4 py-3 text-sm text-white/50 flex items-start gap-2">
+            <Layers size={16} className="text-[#f5a623] flex-shrink-0 mt-0.5" />
+            Each team will choose from available question pools (1–30) before their round starts.
+          </div>
+
           <button
             disabled={teams.length === 0}
-            onClick={() => { fetchQuestions(); setGameState("question-select"); }}
+            onClick={() => { fetchPools(); setCurrentTeamIdx(0); setSessionResults([]); setCurrentPoolPick(null); setGameState("pool-select"); }}
             className="w-full bg-[#f5a623] hover:bg-[#fbbf24] disabled:opacity-40 text-[#0a1628] font-black py-4 rounded-2xl text-lg flex items-center justify-center gap-2 transition-all"
           >
-            Next: Select Questions <ArrowRight size={20} />
+            Start Session <ArrowRight size={20} />
           </button>
         </div>
       </div>
@@ -344,197 +374,148 @@ export default function RapidFirePage() {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // SCREEN: QUESTION SELECTION
+  // SCREEN: POOL SELECTION (per team)
   // ──────────────────────────────────────────────────────────────────────────
-  if (gameState === "question-select") {
+  if (gameState === "pool-select") {
+    const usedPoolNums = new Set(sessionResults.map((r) => r.poolNumber));
+    const currentTeamName = teams[currentTeamIdx];
+
     return (
-      <div className="p-6 text-white min-h-screen flex flex-col">
+      <div className="p-6 text-white min-h-screen">
         {/* Header */}
-        <div className="flex items-start justify-between mb-5">
+        <div className="flex items-start justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-black">Select Round Questions</h1>
-            <p className="text-white/50 text-sm mt-0.5">Step 2 of 2 · Choose exactly {REQUIRED_QUESTIONS} questions for this session</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setGameState("session-setup")} className="text-white/40 hover:text-white text-sm px-3 py-2 rounded-xl bg-white/5 border border-white/10 transition-colors">
-              ← Back
-            </button>
-            <button
-              disabled={!canStart}
-              onClick={() => {
-                const chosen = allQuestions.filter((q) => selectedIds.has(q.id));
-                setRoundQuestions(chosen);
-                setCurrentTeamIdx(0);
-                setSessionResults([]);
-                setGameState("round-setup");
-              }}
-              className="flex items-center gap-2 bg-[#f5a623] hover:bg-[#fbbf24] disabled:opacity-30 disabled:cursor-not-allowed text-[#0a1628] font-black px-5 py-2.5 rounded-xl transition-all"
-            >
-              <Play size={16} /> Start Session
-            </button>
-          </div>
-        </div>
-
-        {/* Selection counter */}
-        <div className={clsx(
-          "flex items-center justify-between rounded-2xl px-5 py-3 mb-5 border transition-colors",
-          canStart
-            ? "bg-green-500/10 border-green-500/30 text-green-400"
-            : "bg-white/5 border-white/10 text-white/60"
-        )}>
-          <div className="flex items-center gap-3">
-            <div className={clsx("text-3xl font-black", canStart ? "text-green-400" : "text-[#f5a623]")}>
-              {selectedCount}
+            <div className="text-white/40 text-sm uppercase tracking-widest mb-1">
+              Team {currentTeamIdx + 1} of {teams.length}
             </div>
-            <div className="text-sm">
-              of {REQUIRED_QUESTIONS} questions selected
-              {!canStart && <span className="text-white/30 ml-2">· Need {REQUIRED_QUESTIONS - selectedCount} more</span>}
-              {canStart && <span className="ml-2 font-bold">✓ Ready to start!</span>}
-            </div>
+            <h1 className="text-3xl font-black">
+              <span className="text-[#f5a623]">{currentTeamName}</span>
+              <span className="text-white/60 font-medium text-xl ml-3">— Choose Your Pool</span>
+            </h1>
+            <p className="text-white/40 text-sm mt-1">Select a question pool to answer for your round</p>
           </div>
-          {selectedCount > 0 && (
-            <button onClick={() => setSelectedIds(new Set())} className="text-white/30 hover:text-white/60 text-xs transition-colors">
-              Clear all
-            </button>
-          )}
-        </div>
-
-        {/* Selected questions pills */}
-        {selectedCount > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4 p-3 bg-white/3 border border-white/5 rounded-xl">
-            {allQuestions.filter((q) => selectedIds.has(q.id)).map((q, i) => (
-              <div key={q.id} className="flex items-center gap-1.5 bg-[#f5a623]/20 border border-[#f5a623]/30 text-[#f5a623] rounded-full px-3 py-1 text-xs font-medium">
-                <span className="text-[#f5a623]/60 font-black">{i + 1}.</span>
-                <span className="max-w-[200px] truncate">{q.question_text}</span>
-                <button onClick={() => toggleQuestion(q)} className="text-[#f5a623]/50 hover:text-[#f5a623] ml-1">
-                  <X size={11} />
-                </button>
-              </div>
+          {/* Team progress dots */}
+          <div className="flex items-center gap-1.5 mt-2">
+            {teams.map((t, i) => (
+              <div
+                key={i}
+                title={t}
+                className={clsx(
+                  "h-2 rounded-full transition-all",
+                  i < currentTeamIdx ? "w-8 bg-[#f5a623]" : i === currentTeamIdx ? "w-8 bg-white/60" : "w-4 bg-white/10"
+                )}
+              />
             ))}
+          </div>
+        </div>
+
+        {/* Loading / error */}
+        {loadingPools && (
+          <div className="flex flex-col items-center justify-center py-32 gap-3 text-white/30">
+            <Loader2 size={36} className="animate-spin" />
+            <span>Loading question pools…</span>
           </div>
         )}
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3 mb-4">
-          <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2 flex-1 min-w-48">
-            <Search size={14} className="text-white/30 flex-shrink-0" />
-            <input
-              value={qSearch}
-              onChange={(e) => setQSearch(e.target.value)}
-              placeholder="Search questions or subjects…"
-              className="bg-transparent text-sm text-white placeholder-white/20 outline-none w-full"
-            />
-            {qSearch && <button onClick={() => setQSearch("")} className="text-white/20 hover:text-white"><X size={13} /></button>}
+        {poolsError && (
+          <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm flex items-center gap-2">
+            <AlertTriangle size={15} /> {poolsError} — showing demo pools
           </div>
-          <select value={qFilterCat} onChange={(e) => setQFilterCat(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none">
-            <option value="" className="bg-[#0a1628]">All Categories</option>
-            <option value="science"    className="bg-[#0a1628]">Science</option>
-            <option value="arts"       className="bg-[#0a1628]">Arts</option>
-            <option value="commercial" className="bg-[#0a1628]">Commercial</option>
-            <option value="general"    className="bg-[#0a1628]">General</option>
-          </select>
-          <select value={qFilterDiff} onChange={(e) => setQFilterDiff(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none">
-            <option value="" className="bg-[#0a1628]">All Difficulties</option>
-            <option value="easy"   className="bg-[#0a1628]">Easy</option>
-            <option value="medium" className="bg-[#0a1628]">Medium</option>
-            <option value="hard"   className="bg-[#0a1628]">Hard</option>
-          </select>
-        </div>
+        )}
 
-        {/* Question list */}
-        <div className="flex-1 overflow-auto">
-          {loadingQ ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-3 text-white/30">
-              <Loader2 size={32} className="animate-spin" />
-              <span>Loading questions…</span>
+        {!loadingPools && pools.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-32 gap-4 text-center">
+            <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center">
+              <Layers size={36} className="text-white/20" />
             </div>
-          ) : filteredQ.length === 0 ? (
-            <div className="text-center py-20 text-white/20">No questions match your filters.</div>
-          ) : (
-            <div className="space-y-2">
-              {filteredQ.map((q, i) => {
-                const isSelected = selectedIds.has(q.id);
-                const isDisabled = !isSelected && selectedCount >= REQUIRED_QUESTIONS;
+            <div>
+              <div className="text-white/50 font-bold text-lg">No question pools found</div>
+              <div className="text-white/20 text-sm mt-1">Go to Admin → Question Pools to create pools first</div>
+            </div>
+          </div>
+        )}
+
+        {!loadingPools && pools.length > 0 && (
+          <>
+            {/* Previously chosen pools recap */}
+            {sessionResults.length > 0 && (
+              <div className="mb-5 bg-white/3 border border-white/5 rounded-xl px-4 py-3 flex flex-wrap gap-3 text-xs text-white/40">
+                <span className="font-medium text-white/30 uppercase tracking-wider">Pools used so far:</span>
+                {sessionResults.map((r) => (
+                  <span key={r.teamName} className="flex items-center gap-1.5">
+                    <span className="bg-[#f5a623]/20 text-[#f5a623] px-2 py-0.5 rounded-full font-bold">
+                      Pool {String(r.poolNumber).padStart(2, "0")}
+                    </span>
+                    <span className="text-white/30">by {r.teamName}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Pool grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              {pools.map((pool) => {
+                const isUsed = usedPoolNums.has(pool.pool_number);
+                const usedBy = sessionResults.find((r) => r.poolNumber === pool.pool_number)?.teamName;
+                const isReady = pool.questions.length === 10;
                 return (
                   <button
-                    key={q.id}
-                    onClick={() => !isDisabled && toggleQuestion(q)}
-                    disabled={isDisabled}
+                    key={pool.id}
+                    disabled={!isReady}
+                    onClick={() => {
+                      setCurrentPoolPick(pool);
+                      setRoundQuestions(pool.questions);
+                      setGameState("round-setup");
+                    }}
                     className={clsx(
-                      "w-full flex items-start gap-4 px-5 py-4 rounded-2xl border text-left transition-all",
-                      isSelected
-                        ? "bg-[#f5a623]/15 border-[#f5a623]/40"
-                        : isDisabled
-                        ? "bg-white/2 border-white/5 opacity-30 cursor-not-allowed"
-                        : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                      "relative flex flex-col items-center gap-2 p-5 rounded-2xl border text-center transition-all",
+                      !isReady
+                        ? "bg-white/2 border-white/5 opacity-40 cursor-not-allowed"
+                        : isUsed
+                        ? "bg-white/5 border-white/10 hover:bg-[#f5a623]/10 hover:border-[#f5a623]/30 cursor-pointer"
+                        : "bg-white/5 border-white/10 hover:bg-[#f5a623]/15 hover:border-[#f5a623]/40 hover:scale-105 active:scale-100 cursor-pointer"
                     )}
                   >
-                    {/* Checkbox */}
+                    {/* Pool number */}
                     <div className={clsx(
-                      "w-6 h-6 rounded-lg border-2 flex-shrink-0 flex items-center justify-center mt-0.5 transition-all",
-                      isSelected ? "bg-[#f5a623] border-[#f5a623]" : "border-white/20"
+                      "w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl transition-colors",
+                      isUsed ? "bg-white/10 text-white/40" : "bg-[#f5a623]/20 text-[#f5a623]"
                     )}>
-                      {isSelected && (
-                        <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
-                          <path d="M1 5L4.5 8.5L11 1" stroke="#0a1628" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
+                      {String(pool.pool_number).padStart(2, "0")}
                     </div>
 
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className={clsx("font-medium text-sm leading-relaxed", isSelected ? "text-white" : "text-white/80")}>
-                          {q.question_text}
-                        </p>
-                        {isSelected && (
-                          <span className="text-[#f5a623] text-xs font-black flex-shrink-0">
-                            #{Array.from(selectedIds).indexOf(q.id) + 1}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-white/30 text-xs">{q.subject}</span>
-                        <span className="text-white/10">·</span>
-                        <span className="text-white/30 text-xs capitalize">{q.category}</span>
-                        {q.difficulty && (
-                          <>
-                            <span className="text-white/10">·</span>
-                            <span className={clsx("text-xs px-1.5 py-0.5 rounded-full capitalize font-medium", DIFF_COLORS[q.difficulty] ?? "text-white/40")}>
-                              {q.difficulty}
-                            </span>
-                          </>
-                        )}
-                        <span className="text-white/10">·</span>
-                        <span className="text-white/30 text-xs">Ans: <em className="not-italic text-white/50">{q.answer_key}</em></span>
-                      </div>
+                    {/* Name */}
+                    <div className={clsx("font-bold text-sm leading-tight", isUsed ? "text-white/40" : "text-white")}>
+                      {pool.name}
                     </div>
+
+                    {/* Question count */}
+                    <div className="text-white/30 text-xs flex items-center gap-1">
+                      <BookOpen size={10} /> {pool.questions.length} questions
+                    </div>
+
+                    {/* Already used badge */}
+                    {isUsed && (
+                      <div className="absolute top-2 right-2 bg-white/10 text-white/30 text-xs px-1.5 py-0.5 rounded-full">
+                        Used
+                      </div>
+                    )}
+                    {isUsed && usedBy && (
+                      <div className="text-white/20 text-xs truncate max-w-full">by {usedBy}</div>
+                    )}
+
+                    {/* Not ready badge */}
+                    {!isReady && (
+                      <div className="absolute top-2 right-2 bg-yellow-500/20 text-yellow-400 text-xs px-1.5 py-0.5 rounded-full">
+                        Incomplete
+                      </div>
+                    )}
                   </button>
                 );
               })}
             </div>
-          )}
-        </div>
-
-        {/* Sticky bottom CTA */}
-        <div className="pt-4 border-t border-white/10 mt-4">
-          <button
-            disabled={!canStart}
-            onClick={() => {
-              const chosen = allQuestions.filter((q) => selectedIds.has(q.id));
-              setRoundQuestions(chosen);
-              setCurrentTeamIdx(0);
-              setSessionResults([]);
-              setGameState("round-setup");
-            }}
-            className="w-full bg-[#f5a623] hover:bg-[#fbbf24] disabled:opacity-30 disabled:cursor-not-allowed text-[#0a1628] font-black py-4 rounded-2xl flex items-center justify-center gap-2 transition-all"
-          >
-            <Play size={20} />
-            {canStart ? `Start Session with ${teams.length} team${teams.length !== 1 ? "s" : ""}` : `Select ${REQUIRED_QUESTIONS - selectedCount} more question${REQUIRED_QUESTIONS - selectedCount !== 1 ? "s" : ""}`}
-          </button>
-        </div>
+          </>
+        )}
       </div>
     );
   }
@@ -547,21 +528,33 @@ export default function RapidFirePage() {
     return (
       <div className="p-8 text-white flex flex-col items-center justify-center min-h-screen">
         <div className="max-w-md w-full text-center space-y-6">
+          {/* Progress bar */}
           <div className="flex justify-center gap-2 mb-2">
             {teams.map((_, i) => (
               <div key={i} className={clsx("h-1.5 rounded-full flex-1 max-w-16 transition-all",
                 i < teamsPlayed ? "bg-[#f5a623]" : i === currentTeamIdx ? "bg-white/60" : "bg-white/10")} />
             ))}
           </div>
+
           <div className="bg-white/5 border border-white/10 rounded-3xl p-8">
             <div className="text-white/40 text-sm uppercase tracking-widest mb-2">Now Up</div>
             <div className="text-4xl font-black text-[#f5a623] mb-1">{teams[currentTeamIdx]}</div>
-            <div className="text-white/40 text-sm mb-4">Team {currentTeamIdx + 1} of {teams.length}</div>
+            <div className="text-white/40 text-sm mb-2">Team {currentTeamIdx + 1} of {teams.length}</div>
 
-            {/* Show the selected questions as a preview */}
+            {/* Selected pool badge */}
+            {currentPoolPick && (
+              <div className="inline-flex items-center gap-2 bg-[#f5a623]/20 border border-[#f5a623]/30 rounded-xl px-4 py-2 mb-5">
+                <Layers size={14} className="text-[#f5a623]" />
+                <span className="text-[#f5a623] font-black text-sm">
+                  Pool {String(currentPoolPick.pool_number).padStart(2, "0")} — {currentPoolPick.name}
+                </span>
+              </div>
+            )}
+
+            {/* Questions preview */}
             <div className="bg-white/5 rounded-xl p-3 mb-5 text-left space-y-1 max-h-36 overflow-y-auto">
               <div className="text-white/30 text-xs uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <BookOpen size={11} /> {roundQuestions.length} questions for this round
+                <BookOpen size={11} /> {roundQuestions.length} questions in this round
               </div>
               {roundQuestions.map((q, i) => (
                 <div key={q.id} className="flex items-start gap-2 text-xs text-white/50">
@@ -571,12 +564,16 @@ export default function RapidFirePage() {
               ))}
             </div>
 
+            {/* Previous scores */}
             {sessionResults.length > 0 && (
               <div className="mb-4 text-left space-y-2">
                 <div className="text-white/30 text-xs uppercase tracking-wider">Previous scores</div>
                 {sessionResults.map((r) => (
-                  <div key={r.teamName} className="flex justify-between text-sm text-white/60">
-                    <span>{r.teamName}</span>
+                  <div key={r.teamName} className="flex justify-between items-center text-sm text-white/60">
+                    <div>
+                      <span>{r.teamName}</span>
+                      <span className="text-white/20 ml-2 text-xs">Pool {r.poolNumber}</span>
+                    </div>
                     <span className="text-[#f5a623] font-bold">{r.score} pts</span>
                   </div>
                 ))}
@@ -610,6 +607,11 @@ export default function RapidFirePage() {
             <Trophy size={48} className="text-[#f5a623] mx-auto mb-3" />
             <h2 className="text-3xl font-black">Round Complete!</h2>
             <p className="text-white/50">{thisResult?.teamName}</p>
+            {thisResult && (
+              <div className="inline-flex items-center gap-1.5 bg-[#f5a623]/20 text-[#f5a623] rounded-full px-3 py-1 text-xs font-bold mt-1">
+                <Layers size={11} /> Pool {String(thisResult.poolNumber).padStart(2, "0")} — {thisResult.poolName}
+              </div>
+            )}
           </div>
           <div className="bg-[#f5a623]/10 border border-[#f5a623]/30 rounded-2xl p-6 text-center">
             <div className="text-6xl font-black text-[#f5a623]">{thisResult?.score ?? 0}</div>
@@ -631,8 +633,11 @@ export default function RapidFirePage() {
             <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
               <div className="text-white/30 text-xs uppercase tracking-wider mb-2">Session So Far</div>
               {sessionResults.map((r, i) => (
-                <div key={i} className="flex justify-between text-sm">
-                  <span className="text-white/70">{r.teamName}</span>
+                <div key={i} className="flex justify-between items-center text-sm">
+                  <div>
+                    <span className="text-white/70">{r.teamName}</span>
+                    <span className="text-white/20 ml-2 text-xs">Pool {r.poolNumber}</span>
+                  </div>
                   <span className="text-[#f5a623] font-bold">{r.score} pts</span>
                 </div>
               ))}
@@ -663,20 +668,28 @@ export default function RapidFirePage() {
           <div className="text-center">
             <Medal size={48} className="text-[#f5a623] mx-auto mb-3" />
             <h1 className="text-3xl font-black">Session Complete!</h1>
-            <p className="text-white/50">Final standings · {roundQuestions.length} questions used</p>
+            <p className="text-white/50">Final standings · {teams.length} teams competed</p>
           </div>
           <div className="space-y-3">
             {sorted.map((result, i) => <ScoreCard key={result.teamName} result={result} rank={i + 1} />)}
           </div>
           <div className="flex gap-3">
-            <button onClick={resetSession} className="flex-1 bg-[#f5a623] hover:bg-[#fbbf24] text-[#0a1628] font-black py-4 rounded-2xl flex items-center justify-center gap-2">
+            <button
+              onClick={resetSession}
+              className="flex-1 bg-[#f5a623] hover:bg-[#fbbf24] text-[#0a1628] font-black py-4 rounded-2xl flex items-center justify-center gap-2"
+            >
               <RotateCcw size={18} /> New Session
             </button>
             <button
-              onClick={() => { setSessionResults([]); setCurrentTeamIdx(0); setGameState("round-setup"); }}
-              className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-4 rounded-2xl"
+              onClick={() => {
+                setSessionResults([]);
+                setCurrentTeamIdx(0);
+                setCurrentPoolPick(null);
+                setGameState("pool-select");
+              }}
+              className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-1.5 text-sm"
             >
-              Same Questions, New Teams
+              <Layers size={16} /> Same Teams, New Pools
             </button>
           </div>
         </div>
@@ -694,10 +707,25 @@ export default function RapidFirePage() {
     <div className="p-6 text-white min-h-screen flex flex-col">
       {/* Top bar */}
       <div className="flex items-center justify-between mb-4 bg-white/5 border border-white/10 rounded-2xl p-4">
-        <div><div className="text-xs text-white/40 uppercase tracking-widest">Team</div><div className="font-black text-lg text-[#f5a623]">{teams[currentTeamIdx]}</div></div>
-        <div className="text-center"><div className="text-xs text-white/40 uppercase tracking-widest">Questions</div><div className="font-black">Q{questionNum} · {attempts.filter((a) => a.result === "correct").length} correct</div></div>
-        <div className="text-center"><div className="text-xs text-white/40 uppercase tracking-widest">Recycle</div><div className={clsx("font-black", recycleQueue.length > 0 ? "text-[#f5a623]" : "text-white/20")}>{recycleQueue.length > 0 ? `↺ ${recycleQueue.length}` : "—"}</div></div>
-        <div className="text-right"><div className="text-xs text-white/40 uppercase tracking-widest">Score</div><div className="font-black text-[#f5a623] text-xl">{score}</div></div>
+        <div>
+          <div className="text-xs text-white/40 uppercase tracking-widest">Team</div>
+          <div className="font-black text-lg text-[#f5a623]">{teams[currentTeamIdx]}</div>
+          {currentPoolPick && (
+            <div className="text-white/30 text-xs">Pool {String(currentPoolPick.pool_number).padStart(2, "0")}</div>
+          )}
+        </div>
+        <div className="text-center">
+          <div className="text-xs text-white/40 uppercase tracking-widest">Questions</div>
+          <div className="font-black">Q{questionNum} · {attempts.filter((a) => a.result === "correct").length} correct</div>
+        </div>
+        <div className="text-center">
+          <div className="text-xs text-white/40 uppercase tracking-widest">Recycle</div>
+          <div className={clsx("font-black", recycleQueue.length > 0 ? "text-[#f5a623]" : "text-white/20")}>{recycleQueue.length > 0 ? `↺ ${recycleQueue.length}` : "—"}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-xs text-white/40 uppercase tracking-widest">Score</div>
+          <div className="font-black text-[#f5a623] text-xl">{score}</div>
+        </div>
       </div>
 
       {/* 60s timer bar */}

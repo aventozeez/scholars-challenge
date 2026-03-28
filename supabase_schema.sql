@@ -172,3 +172,57 @@ INSERT INTO sc_questions (round_type, category, subject, question_text, answer_k
   ('buzzer', 'science', 'Biology', 'What gas do plants absorb during photosynthesis?', 'Carbon Dioxide (CO2)', 'easy', 10),
   ('buzzer', 'general', 'History', 'Who was the first President of Nigeria?', 'Nnamdi Azikiwe', 'medium', 10),
   ('puzzle', 'science', 'Chemistry', 'Unscramble: NEGXYO (an element essential for breathing)', 'OXYGEN', 'easy', 20);
+
+-- =====================================================
+-- Question Pools (1–30 pools, each with 10 questions)
+-- =====================================================
+
+CREATE TABLE sc_question_pools (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pool_number INTEGER UNIQUE NOT NULL CHECK (pool_number BETWEEN 1 AND 30),
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Junction table linking pools to their 10 questions
+CREATE TABLE sc_pool_questions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pool_id UUID NOT NULL REFERENCES sc_question_pools(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES sc_questions(id) ON DELETE CASCADE,
+  order_index INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(pool_id, question_id)
+);
+
+-- Indexes
+CREATE INDEX idx_pool_questions_pool_id ON sc_pool_questions(pool_id);
+CREATE INDEX idx_pool_questions_question_id ON sc_pool_questions(question_id);
+
+-- Auto-update updated_at on pool edits
+CREATE OR REPLACE FUNCTION update_pool_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_pools_updated_at
+  BEFORE UPDATE ON sc_question_pools
+  FOR EACH ROW EXECUTE FUNCTION update_pool_updated_at();
+
+-- RLS
+ALTER TABLE sc_question_pools ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sc_pool_questions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public read pools"
+  ON sc_question_pools FOR SELECT USING (true);
+
+CREATE POLICY "Admin manage pools"
+  ON sc_question_pools FOR ALL USING (true);
+
+CREATE POLICY "Public read pool questions"
+  ON sc_pool_questions FOR SELECT USING (true);
+
+CREATE POLICY "Admin manage pool questions"
+  ON sc_pool_questions FOR ALL USING (true);

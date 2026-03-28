@@ -134,6 +134,41 @@ export type Database = {
         Insert: Omit<Database["public"]["Tables"]["sc_registrations"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["sc_registrations"]["Insert"]>;
       };
+      sc_question_pools: {
+        Row: {
+          id: string;
+          pool_number: number;
+          name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          pool_number: number;
+          name: string;
+        };
+        Update: {
+          pool_number?: number;
+          name?: string;
+        };
+      };
+      sc_pool_questions: {
+        Row: {
+          id: string;
+          pool_id: string;
+          question_id: string;
+          order_index: number;
+        };
+        Insert: {
+          pool_id: string;
+          question_id: string;
+          order_index?: number;
+        };
+        Update: {
+          pool_id?: string;
+          question_id?: string;
+          order_index?: number;
+        };
+      };
     };
   };
 };

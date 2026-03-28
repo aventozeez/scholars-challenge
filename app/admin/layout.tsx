@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Trophy, LayoutDashboard, HelpCircle, Users, Zap, ArrowLeft, LogOut } from "lucide-react";
+import { Trophy, LayoutDashboard, HelpCircle, Users, Zap, ArrowLeft, LogOut, Layers } from "lucide-react";
 import { useAdminAuth, adminLogout } from "@/lib/useAdminAuth";
 import clsx from "clsx";
 
 const adminNav = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/questions", label: "Questions", icon: HelpCircle },
+  { href: "/admin/pools", label: "Question Pools", icon: Layers },
   { href: "/admin/teams", label: "Teams", icon: Users },
   { href: "/admin/live/rapid-fire", label: "Rapid Fire", icon: Zap },
 ];
