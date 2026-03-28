@@ -7,7 +7,6 @@ import clsx from "clsx";
 const navLinks = [
   { label: "About", href: "/about" },
   { label: "How It Works", href: "/#how-it-works" },
-  { label: "Prizes", href: "/prizes" },
   { label: "Leaderboard", href: "/leaderboard" },
   { label: "Gallery", href: "/gallery" },
   { label: "FAQ", href: "/faq" },
@@ -52,12 +51,6 @@ export default function Navbar() {
             >
               Admin
             </Link>
-            <Link
-              href="/register"
-              className="bg-[#f5a623] hover:bg-[#fbbf24] text-[#0a1628] font-bold text-sm px-5 py-2 rounded-full transition-colors"
-            >
-              Register Free
-            </Link>
           </div>
 
           {/* Mobile menu button */}
@@ -88,20 +81,13 @@ export default function Navbar() {
               {link.label}
             </Link>
           ))}
-          <div className="pt-3 border-t border-white/10 mt-2 flex flex-col gap-2">
+          <div className="pt-3 border-t border-white/10 mt-2">
             <Link
               href="/admin"
               onClick={() => setOpen(false)}
-              className="text-white/60 hover:text-white text-sm py-2"
+              className="text-white/60 hover:text-white text-sm py-2 block"
             >
               Admin Portal
-            </Link>
-            <Link
-              href="/register"
-              onClick={() => setOpen(false)}
-              className="bg-[#f5a623] text-[#0a1628] font-bold text-sm px-5 py-3 rounded-full text-center"
-            >
-              Register Free
             </Link>
           </div>
         </div>
