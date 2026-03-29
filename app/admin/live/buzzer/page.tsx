@@ -44,11 +44,22 @@ const DEMO_QUESTIONS: BuzzerQuestion[] = [
   { id: "bz10", question_text: "Which planet is farthest from the sun in our solar system?",  answer_key: "Neptune",                subject: "Physics"     },
 ];
 
+type SavedTeam = { id: string; team_name: string; school_name: string; category: string };
+
+const DEMO_TEAMS: SavedTeam[] = [
+  { id: "st1", team_name: "Lagos Panthers",     school_name: "Kings College",    category: "science"    },
+  { id: "st2", team_name: "Ibadan Royals",       school_name: "Govt College",     category: "science"    },
+  { id: "st3", team_name: "Abuja Scholars",      school_name: "Federal Science",  category: "commercial" },
+  { id: "st4", team_name: "Kano Champions",      school_name: "GSS Kano",         category: "science"    },
+];
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function BuzzerPage() {
   // ── Setup ─────────────────────────────────────────────────────────────────
   const [gameState, setGameState] = useState<GameState>("setup");
   const [teamNames, setTeamNames] = useState(["Team A", "Team B"]);
+  const [savedTeams, setSavedTeams] = useState<SavedTeam[]>([]);
+  const [loadingTeams, setLoadingTeams] = useState(false);
 
   // ── Questions ─────────────────────────────────────────────────────────────
   const [matchQuestions, setMatchQuestions] = useState<BuzzerQuestion[]>([]);
@@ -76,6 +87,22 @@ export default function BuzzerPage() {
   }, []);
 
   useEffect(() => () => clearFlash(), [clearFlash]);
+
+  // ── Fetch saved teams ──────────────────────────────────────────────────
+  const fetchTeams = useCallback(async () => {
+    setLoadingTeams(true);
+    if (!isSupabaseConfigured) { setSavedTeams(DEMO_TEAMS); setLoadingTeams(false); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from("sc_match_teams")
+      .select("id, team_name, school_name, category")
+      .eq("status", "active")
+      .order("team_name");
+    setSavedTeams(data ?? DEMO_TEAMS);
+    setLoadingTeams(false);
+  }, []);
+
+  useEffect(() => { fetchTeams(); }, [fetchTeams]);
 
   // ── Fetch buzzer questions from DB ─────────────────────────────────────
   const fetchQuestions = useCallback(async () => {
@@ -254,10 +281,61 @@ export default function BuzzerPage() {
             ))}
           </div>
 
-          {/* Team names */}
+          {/* Saved teams picker */}
+          {savedTeams.length > 0 && (
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+              <div className="flex items-center gap-2 text-white/40 text-xs uppercase tracking-wider mb-3">
+                <Users size={13} />
+                {loadingTeams ? "Loading teams…" : "Select from saved teams"}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {savedTeams.map((t) => {
+                  const slot = teamNames[0] === t.team_name ? 0 : teamNames[1] === t.team_name ? 1 : null;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        // assign to the first empty slot, or rotate
+                        setTeamNames((prev) => {
+                          const next = [...prev];
+                          if (next[0] !== t.team_name && next[1] !== t.team_name) {
+                            // fill first slot if default, else second
+                            if (next[0] === "Team A" || next[0] === "") next[0] = t.team_name;
+                            else if (next[1] === "Team B" || next[1] === "") next[1] = t.team_name;
+                            else next[0] = t.team_name;
+                          } else if (next[0] === t.team_name) next[0] = "Team A";
+                          else next[1] = t.team_name;
+                          return next;
+                        });
+                      }}
+                      className={clsx(
+                        "flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all",
+                        slot === 0 ? "bg-blue-500/20 border-blue-400/40 text-blue-300" :
+                        slot === 1 ? "bg-[#f5a623]/20 border-[#f5a623]/40 text-[#f5a623]" :
+                        "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:border-white/20"
+                      )}
+                    >
+                      <div className={clsx(
+                        "w-5 h-5 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0",
+                        slot === 0 ? "bg-blue-500/30" : slot === 1 ? "bg-[#f5a623]/30" : "bg-white/10"
+                      )}>
+                        {slot !== null ? slot + 1 : ""}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs truncate">{t.team_name}</div>
+                        {t.school_name && <div className="text-xs opacity-40 truncate">{t.school_name}</div>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Team names — manual / final entry */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
             <div className="flex items-center gap-2 text-white/40 text-xs uppercase tracking-wider">
-              <Users size={14} /> Enter Team Names
+              <Users size={14} /> Confirm Team Names
             </div>
             {([0, 1] as const).map((i) => (
               <div key={i} className="flex items-center gap-3">

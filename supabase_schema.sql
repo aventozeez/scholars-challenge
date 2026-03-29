@@ -226,3 +226,29 @@ CREATE POLICY "Public read pool questions"
 
 CREATE POLICY "Admin manage pool questions"
   ON sc_pool_questions FOR ALL USING (true);
+
+-- =====================================================
+-- Match Teams (lightweight teams for live competitions)
+-- No school FK dependency — just name, school, category
+-- =====================================================
+
+CREATE TABLE sc_match_teams (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_name TEXT NOT NULL,
+  school_name TEXT DEFAULT '',
+  state TEXT DEFAULT '',
+  category TEXT DEFAULT 'general' CHECK (category IN ('science', 'arts', 'commercial', 'general')),
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'eliminated', 'winner')),
+  total_score INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_match_teams_status ON sc_match_teams(status);
+
+ALTER TABLE sc_match_teams ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public read match teams"
+  ON sc_match_teams FOR SELECT USING (true);
+
+CREATE POLICY "Admin manage match teams"
+  ON sc_match_teams FOR ALL USING (true);

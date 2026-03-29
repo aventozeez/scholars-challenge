@@ -134,6 +134,34 @@ export type Database = {
         Insert: Omit<Database["public"]["Tables"]["sc_registrations"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["sc_registrations"]["Insert"]>;
       };
+      sc_match_teams: {
+        Row: {
+          id: string;
+          team_name: string;
+          school_name: string;
+          state: string;
+          category: "science" | "arts" | "commercial" | "general";
+          status: "active" | "eliminated" | "winner";
+          total_score: number;
+          created_at: string;
+        };
+        Insert: {
+          team_name: string;
+          school_name?: string;
+          state?: string;
+          category?: "science" | "arts" | "commercial" | "general";
+          status?: "active" | "eliminated" | "winner";
+          total_score?: number;
+        };
+        Update: {
+          team_name?: string;
+          school_name?: string;
+          state?: string;
+          category?: "science" | "arts" | "commercial" | "general";
+          status?: "active" | "eliminated" | "winner";
+          total_score?: number;
+        };
+      };
       sc_question_pools: {
         Row: {
           id: string;

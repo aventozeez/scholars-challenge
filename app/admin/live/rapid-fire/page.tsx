@@ -131,6 +131,15 @@ function ScoreCard({ result, rank }: { result: TeamResult; rank: number }) {
   );
 }
 
+type SavedTeam = { id: string; team_name: string; school_name: string; category: string };
+
+const RF_DEMO_TEAMS: SavedTeam[] = [
+  { id: "rt1", team_name: "Team Alpha",   school_name: "Kings College",   category: "science"    },
+  { id: "rt2", team_name: "Team Beta",    school_name: "Govt College",    category: "science"    },
+  { id: "rt3", team_name: "Team Gamma",   school_name: "Federal Science", category: "commercial" },
+  { id: "rt4", team_name: "Team Delta",   school_name: "GSS Kano",        category: "science"    },
+];
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function RapidFirePage() {
   // Session state
@@ -138,6 +147,9 @@ export default function RapidFirePage() {
   const [newTeam, setNewTeam] = useState("");
   const [sessionResults, setSessionResults] = useState<TeamResult[]>([]);
   const [currentTeamIdx, setCurrentTeamIdx] = useState(0);
+
+  // Saved teams
+  const [savedTeams, setSavedTeams] = useState<SavedTeam[]>([]);
 
   // Pool state
   const [pools, setPools] = useState<Pool[]>([]);
@@ -162,6 +174,21 @@ export default function RapidFirePage() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const stopTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  }, []);
+
+  // ── Fetch saved teams ──────────────────────────────────────────────────
+  useEffect(() => {
+    const load = async () => {
+      if (!isSupabaseConfigured) { setSavedTeams(RF_DEMO_TEAMS); return; }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from("sc_match_teams")
+        .select("id, team_name, school_name, category")
+        .eq("status", "active")
+        .order("team_name");
+      setSavedTeams(data?.length ? data : RF_DEMO_TEAMS);
+    };
+    load();
   }, []);
 
   // ── Fetch pools ────────────────────────────────────────────────────────
@@ -319,6 +346,35 @@ export default function RapidFirePage() {
             <p className="text-white/50">Add competing teams. Each team will pick their own question pool.</p>
           </div>
 
+          {/* Saved teams quick-add */}
+          {savedTeams.length > 0 && (
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+              <div className="text-white/40 text-xs uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Users size={13} /> Tap to add saved teams
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {savedTeams.map((t) => {
+                  const already = teams.includes(t.team_name);
+                  return (
+                    <button
+                      key={t.id}
+                      disabled={already}
+                      onClick={() => setTeams((prev) => [...prev, t.team_name])}
+                      className={clsx(
+                        "text-xs font-bold px-3 py-1.5 rounded-full border transition-all",
+                        already
+                          ? "bg-[#f5a623]/20 border-[#f5a623]/30 text-[#f5a623] cursor-default"
+                          : "bg-white/5 border-white/10 text-white/60 hover:bg-white/15 hover:text-white"
+                      )}
+                    >
+                      {already ? "✓ " : "+ "}{t.team_name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-3">
             <div className="flex items-center gap-2 text-white/40 text-xs uppercase tracking-wider mb-2">
               <Users size={14} /> Teams in this session
@@ -337,7 +393,7 @@ export default function RapidFirePage() {
                 value={newTeam}
                 onChange={(e) => setNewTeam(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && newTeam.trim()) { setTeams((t) => [...t, newTeam.trim()]); setNewTeam(""); } }}
-                placeholder="Add a team name…"
+                placeholder="Or type a custom team name…"
                 className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-[#f5a623]/40"
               />
               <button onClick={() => { if (newTeam.trim()) { setTeams((t) => [...t, newTeam.trim()]); setNewTeam(""); } }}
